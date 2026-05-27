@@ -1,0 +1,85 @@
+name: Generate Cricket Report
+
+# ─────────────────────────────────────────────────────────────────
+# Triggers:
+#   1. Every day at 7:00 AM UTC (scheduled)
+#   2. On every push to main (for testing)
+#   3. Manually from the Actions tab (workflow_dispatch)
+# ─────────────────────────────────────────────────────────────────
+on:
+  schedule:
+    - cron: "0 7 * * *"    # 7:00 AM UTC daily  (12:30 PM IST)
+  push:
+    branches: [main]
+  workflow_dispatch:        # lets you click "Run workflow" manually
+
+jobs:
+  generate-and-publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write       # needed to commit report back to repo
+
+    steps:
+
+      # 1. Checkout repo
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Set up Docker Buildx (layer caching)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 3. Build the Docker image
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: cricket-report:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 4. Run the container — generates report.html
+      - name: Run report generator
+        run: |
+          mkdir -p ./reports
+          docker run --rm \
+            -e CRICKET_API_KEY=${{ secrets.CRICKET_API_KEY }} \
+            -e REPORT_OUTPUT=/output/report.html \
+            -v ${{ github.workspace }}/reports:/output \
+            cricket-report:latest
+          echo "Report generated:"
+          ls -lh ./reports/
+
+      # 5. Verify report was created and is not empty
+      - name: Verify report
+        run: |
+          if [ ! -f "./reports/report.html" ]; then
+            echo "❌ Report not found!"
+            exit 1
+          fi
+          SIZE=$(wc -c < ./reports/report.html)
+          echo "✅ Report size: $SIZE bytes"
+          if [ "$SIZE" -lt 500 ]; then
+            echo "❌ Report looks too small — something went wrong"
+            exit 1
+          fi
+
+      # 6. Commit the report back to the repo
+      - name: Commit report to repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports/report.html
+          git diff --staged --quiet || git commit -m "report: daily cricket update $(date +'%Y-%m-%d %H:%M UTC')"
+          git push
+
+      # 7. Deploy report to GitHub Pages
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./reports
+          destination_dir: .
+          commit_message: "deploy: cricket report $(date +'%Y-%m-%d')"
