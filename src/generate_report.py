@@ -1,5 +1,6 @@
 """
-Cricket Daily Report Generator
+🏏 Cricket Daily Report
+Generated automatically by GitHub Actions on 27 May, 4:30 PM
 Fetches live + recent cricket scores from cricapi.com (free tier)
 and generates a beautiful HTML report.
 """
